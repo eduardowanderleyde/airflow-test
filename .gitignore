@@ -1,0 +1,32 @@
+# Airflow
+airflow/logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Docker
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dados locais (opcional - remover se quiser versionar)
+# data/raw/
+# data/curated/
+

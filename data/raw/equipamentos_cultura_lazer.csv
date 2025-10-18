@@ -1,0 +1,27 @@
+NOME,TIPO,BAIRRO,ENDERECO,REGIONAL,CATEGORIA
+Praça do Derby,PRAÇA,Derby,Rua do Derby,Regional 1,Lazer
+Teatro de Santa Isabel,TEATRO,Santo Antônio,Praça da República,Regional 1,Cultura
+Parque da Jaqueira,PARQUE,Jaqueira,Rua do Futuro,Regional 3,Lazer
+Museu do Homem do Nordeste,MUSEU,Casa Forte,Av. 17 de Agosto,Regional 3,Cultura
+Praça de Boa Viagem,PRAÇA,Boa Viagem,Av. Boa Viagem,Regional 6,Lazer
+Cine São Luiz,CINEMA,Santo Antônio,Rua da Aurora,Regional 1,Cultura
+Parque Dona Lindu,PARQUE,Boa Viagem,Av. Boa Viagem,Regional 6,Lazer
+Memorial Chico Science,MEMORIAL,Bairro do Recife,Rua da Moeda,Regional 1,Cultura
+Praça do Arsenal,PRAÇA,Bairro do Recife,Arsenal da Marinha,Regional 1,Lazer
+Teatro Apolo,TEATRO,Recife Antigo,Rua do Apolo,Regional 1,Cultura
+Jardim do Baobá,PARQUE,Madalena,Av. Caxangá,Regional 4,Lazer
+Casa da Cultura,CENTRO CULTURAL,Santo Antônio,Rua Floriano Peixoto,Regional 1,Cultura
+Praça de Casa Forte,PRAÇA,Casa Forte,Praça de Casa Forte,Regional 3,Lazer
+Museu do Estado de Pernambuco,MUSEU,Graças,Av. Rui Barbosa,Regional 3,Cultura
+Parque Santana,PARQUE,Casa Amarela,Alto de Santa Terezinha,Regional 2,Lazer
+Torre Malakoff,CENTRO CULTURAL,Recife Antigo,Praça do Arsenal,Regional 1,Cultura
+Praça da República,PRAÇA,Santo Antônio,Praça da República,Regional 1,Lazer
+Museu da Cidade do Recife,MUSEU,Santo Antônio,Forte das Cinco Pontas,Regional 1,Cultura
+Parque Caiara,PARQUE,Caiara,Av. Norte,Regional 5,Lazer
+Pátio de São Pedro,CENTRO CULTURAL,São José,Pátio de São Pedro,Regional 1,Cultura
+Praça do Espinheiro,PRAÇA,Espinheiro,Rua Visconde de Jequitinhonha,Regional 3,Lazer
+Teatro Barreto Júnior,TEATRO,Santo Amaro,Rua Estudante Jeremias Bastos,Regional 1,Cultura
+Parque Arraial Novo do Bom Jesus,PARQUE,Arraial Novo do Bom Jesus,Estrada do Arraial,Regional 8,Lazer
+Oficina Cerâmica Francisco Brennand,MUSEU,Várzea,Propriedade Santos Cosme e Damião,Regional 4,Cultura
+Praça de Afogados,PRAÇA,Afogados,Estrada dos Remédios,Regional 5,Lazer
+
