@@ -1,170 +1,168 @@
 #!/bin/bash
+# Script para validar setup completo do pipeline Airflow + Spark + MinIO
+# Autor: Eduardo Wanderley de Oliveira
 
-# Script de validação do ambiente
-# Executa todos os checks necessários antes de rodar o pipeline
-
-set -e
-
-echo "🔍 Verificando setup do pipeline..."
-echo ""
+set -euo pipefail
 
 # Cores para output
-GREEN='\033[0;32m'
 RED='\033[0;31m'
+GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Função para checks
-check_pass() {
+# Funções auxiliares
+print_success() {
     echo -e "${GREEN}✅ $1${NC}"
 }
 
-check_fail() {
+print_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
-check_warn() {
+print_warning() {
     echo -e "${YELLOW}⚠️  $1${NC}"
 }
 
-# 1. Verificar containers rodando
-echo "📦 Verificando containers..."
-if docker compose ps | grep -q "Up"; then
-    CONTAINERS=$(docker compose ps --format json | jq -r 'select(.State == "running") | .Service' | wc -l)
-    check_pass "Containers rodando: $CONTAINERS"
+print_info() {
+    echo -e "ℹ️  $1"
+}
+
+# Header
+echo "========================================"
+echo "  Validação do Setup - Airflow Pipeline"
+echo "========================================"
+echo ""
+
+# 1. Verificar Docker
+print_info "Verificando Docker..."
+if command -v docker &> /dev/null; then
+    print_success "Docker instalado: $(docker --version)"
 else
-    check_fail "Nenhum container rodando. Execute: docker compose up -d"
+    print_error "Docker não encontrado. Instale: https://docs.docker.com/get-docker/"
     exit 1
 fi
-echo ""
 
-# 2. Verificar MinIO
-echo "🪣 Verificando MinIO..."
-if docker compose ps minio | grep -q "Up"; then
-    check_pass "MinIO está rodando"
-    
-    # Verificar bucket
-    if docker compose exec -T minio mc alias set local http://localhost:9000 minioadmin minioadmin 2>/dev/null; then
-        if docker compose exec -T minio mc ls local/datalake 2>/dev/null; then
-            check_pass "Bucket 'datalake' existe"
-            
-            # Verificar arquivo CSV
-            if docker compose exec -T minio mc ls local/datalake/raw/recife/equipamentos_cultura_lazer.csv 2>/dev/null; then
-                check_pass "Arquivo CSV encontrado no MinIO"
-            else
-                check_warn "Arquivo CSV NÃO encontrado em s3://datalake/raw/recife/"
-                echo "         Execute: docker compose restart minio-setup"
-            fi
-        else
-            check_warn "Bucket 'datalake' não encontrado"
-        fi
-    fi
+# 2. Verificar Docker Compose
+print_info "Verificando Docker Compose..."
+if docker compose version &> /dev/null; then
+    print_success "Docker Compose instalado: $(docker compose version)"
 else
-    check_fail "MinIO não está rodando"
+    print_error "Docker Compose não encontrado"
+    exit 1
 fi
-echo ""
 
-# 3. Verificar Spark
-echo "⚡ Verificando Spark..."
-if docker compose ps spark-master | grep -q "Up"; then
-    check_pass "Spark Master está rodando"
-    
-    # Verificar workers
-    WORKERS=$(docker compose ps spark-worker --format json 2>/dev/null | jq -r 'select(.State == "running")' | wc -l)
-    if [ "$WORKERS" -gt 0 ]; then
-        check_pass "Spark Workers rodando: $WORKERS"
+# 3. Verificar se containers estão rodando
+print_info "Verificando containers..."
+REQUIRED_CONTAINERS=(
+    "airflow-practicing-postgres-1"
+    "airflow-practicing-minio-1"
+    "airflow-practicing-airflow-webserver-1"
+    "airflow-practicing-airflow-scheduler-1"
+)
+
+ALL_RUNNING=true
+for container in "${REQUIRED_CONTAINERS[@]}"; do
+    if docker ps --format '{{.Names}}' | grep -q "$container"; then
+        print_success "Container rodando: $container"
     else
-        check_warn "Nenhum Spark Worker encontrado"
+        print_error "Container não encontrado ou parado: $container"
+        ALL_RUNNING=false
     fi
-else
-    check_fail "Spark Master não está rodando"
-fi
-echo ""
+done
 
-# 4. Verificar Airflow
-echo "🌬️  Verificando Airflow..."
-if docker compose ps airflow-webserver | grep -q "Up"; then
-    check_pass "Airflow Webserver está rodando"
-else
-    check_fail "Airflow Webserver não está rodando"
+if [ "$ALL_RUNNING" = false ]; then
+    print_warning "Execute: docker compose up -d"
+    exit 1
 fi
 
-if docker compose ps airflow-scheduler | grep -q "Up"; then
-    check_pass "Airflow Scheduler está rodando"
+# 4. Verificar portas
+print_info "Verificando portas..."
+PORTS=(5432 7077 8080 8088 9000 9001)
+for port in "${PORTS[@]}"; do
+    if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1 || nc -z localhost $port 2>/dev/null; then
+        print_success "Porta $port em uso"
+    else
+        print_warning "Porta $port não está em uso"
+    fi
+done
+
+# 5. Verificar Airflow UI
+print_info "Verificando Airflow UI..."
+if curl -s -o /dev/null -w "%{http_code}" http://localhost:8088/health | grep -q "200"; then
+    print_success "Airflow UI acessível em http://localhost:8088"
 else
-    check_fail "Airflow Scheduler não está rodando"
+    print_warning "Airflow UI não está respondendo. Aguarde inicialização completa."
 fi
 
-# Verificar provider Spark
-echo ""
-echo "📦 Verificando providers do Airflow..."
-if docker compose exec -T airflow-webserver airflow providers list 2>/dev/null | grep -q "apache-airflow-providers-apache-spark"; then
-    check_pass "Provider Spark instalado"
+# 6. Verificar MinIO
+print_info "Verificando MinIO..."
+if curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/minio/health/live | grep -q "200"; then
+    print_success "MinIO acessível em http://localhost:9000"
+    print_success "MinIO Console em http://localhost:9001 (minioadmin/minioadmin)"
 else
-    check_warn "Provider Spark pode não estar instalado"
-    echo "         Os containers estão instalando dependências no startup (pode levar 1-2 min)"
+    print_warning "MinIO não está respondendo"
 fi
 
-# Verificar boto3
-if docker compose exec -T airflow-webserver python -c "import boto3" 2>/dev/null; then
-    check_pass "boto3 instalado"
-else
-    check_warn "boto3 pode não estar instalado"
-    echo "         Os containers estão instalando dependências no startup (pode levar 1-2 min)"
-fi
-echo ""
-
-# 5. Verificar DAGs
-echo "📋 Verificando DAGs..."
-sleep 2  # Aguarda um pouco para o scheduler processar
-DAGS=$(docker compose exec -T airflow-webserver airflow dags list 2>/dev/null | grep "recife_cultura_etl" | wc -l)
-if [ "$DAGS" -gt 0 ]; then
-    check_pass "DAG 'recife_cultura_etl' encontrada"
-else
-    check_warn "DAG 'recife_cultura_etl' não encontrada"
-    echo "         Execute: docker compose restart airflow-scheduler"
-fi
-echo ""
-
-# 6. Verificar arquivo local
-echo "📁 Verificando arquivos locais..."
-if [ -f "./data/raw/equipamentos_cultura_lazer.csv" ]; then
-    check_pass "CSV local existe em ./data/raw/"
-else
-    check_fail "CSV local NÃO existe em ./data/raw/"
-    echo "         Baixe o dataset do Kaggle ou use o arquivo de exemplo"
-fi
-echo ""
-
-# 7. Verificar configurações Spark
-echo "⚙️  Verificando configurações Spark..."
-if [ -f "./spark/conf/core-site.xml" ]; then
-    check_pass "core-site.xml existe"
-else
-    check_fail "core-site.xml não encontrado"
+# 7. Verificar bucket e arquivo no MinIO
+print_info "Verificando bucket e dados no MinIO..."
+if docker compose exec -T minio mc alias set local http://localhost:9000 minioadmin minioadmin &> /dev/null; then
+    if docker compose exec -T minio mc ls local/datalake &> /dev/null; then
+        print_success "Bucket 'datalake' existe"
+        
+        if docker compose exec -T minio mc ls local/datalake/raw/recife/equipamentos_cultura_lazer.csv &> /dev/null; then
+            print_success "Arquivo CSV encontrado no MinIO"
+        else
+            print_warning "Arquivo CSV não encontrado. Execute: docker compose up minio-setup"
+        fi
+    else
+        print_warning "Bucket 'datalake' não encontrado"
+    fi
 fi
 
-if [ -f "./spark/conf/spark-defaults.conf" ]; then
-    check_pass "spark-defaults.conf existe"
+# 8. Verificar Spark cluster
+print_info "Verificando Spark cluster..."
+if curl -s http://localhost:8080 | grep -q "Spark Master"; then
+    print_success "Spark Master UI acessível em http://localhost:8080"
 else
-    check_fail "spark-defaults.conf não encontrado"
+    print_warning "Spark Master não está respondendo"
 fi
-echo ""
 
-# Resumo final
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "📊 RESUMO"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "URLs para acesso:"
-echo "  🌬️  Airflow:  http://localhost:8088 (admin/admin)"
-echo "  🪣 MinIO:    http://localhost:9001 (minioadmin/minioadmin)"
-echo "  ⚡ Spark UI: http://localhost:8080"
-echo ""
-echo "Próximo passo:"
-echo "  1. Abra o Airflow: http://localhost:8088"
-echo "  2. Ative o DAG 'recife_cultura_etl'"
-echo "  3. Clique em 'Trigger DAG' ▶️"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+# 9. Verificar DAG no Airflow
+print_info "Verificando DAG carregada..."
+if docker compose exec -T airflow-webserver airflow dags list 2>/dev/null | grep -q "recife_cultura_etl"; then
+    print_success "DAG 'recife_cultura_etl' carregada no Airflow"
+else
+    print_warning "DAG não encontrada. Verifique logs: docker compose logs airflow-scheduler"
+fi
 
+# 10. Verificar dependências Python
+print_info "Verificando dependências Python no Airflow..."
+DEPS=("pyspark" "boto3" "apache-airflow-providers-apache-spark")
+for dep in "${DEPS[@]}"; do
+    if docker compose exec -T airflow-webserver python -c "import ${dep%%[*}" &> /dev/null; then
+        print_success "Dependência instalada: $dep"
+    else
+        print_error "Dependência não encontrada: $dep"
+    fi
+done
+
+# Summary
+echo ""
+echo "========================================"
+echo "  RESUMO DA VALIDAÇÃO"
+echo "========================================"
+
+if [ "$ALL_RUNNING" = true ]; then
+    print_success "Setup completo e funcional!"
+    echo ""
+    echo "📊 Acessos:"
+    echo "  - Airflow UI:  http://localhost:8088 (admin/admin)"
+    echo "  - MinIO Console: http://localhost:9001 (minioadmin/minioadmin)"
+    echo "  - Spark Master: http://localhost:8080"
+    echo ""
+    echo "🚀 Para executar a DAG:"
+    echo "  docker compose exec airflow-webserver airflow dags trigger recife_cultura_etl"
+else
+    print_error "Setup incompleto. Corrija os erros acima."
+    exit 1
+fi

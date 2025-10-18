@@ -1,36 +1,47 @@
 version: "3.8"
 
 x-airflow-env: &airflow_env
-  AIRFLOW__CORE__EXECUTOR: LocalExecutor
-  AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
-  AIRFLOW__CORE__FERNET_KEY: "or5bRDKaMSkEstLBdxSzUE_NMabavbFmkWTtmXJYtic="
+  AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR:-LocalExecutor}
+  AIRFLOW__CORE__LOAD_EXAMPLES: ${AIRFLOW__CORE__LOAD_EXAMPLES:-False}
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: ${AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION:-False}
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres:5432/${POSTGRES_DB:-airflow}
+  AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY:-or5bRDKaMSkEstLBdxSzUE_NMabavbFmkWTtmXJYtic=}
+  AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: ${AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL:-30}
+  AIRFLOW__WEBSERVER__RBAC: ${AIRFLOW__WEBSERVER__RBAC:-True}
 
 services:
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
-    ports: ["5432:5432"]
+      POSTGRES_USER: ${POSTGRES_USER:-airflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airflow}
+      POSTGRES_DB: ${POSTGRES_DB:-airflow}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 5s
+      timeout: 3s
       retries: 5
 
   minio:
     image: minio/minio:RELEASE.2024-06-13T22-53-53Z
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports: ["9000:9000", "9001:9001"]
-    volumes: ["minio-data:/data"]
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      retries: 5
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   minio-setup:
     image: minio/mc
@@ -38,10 +49,26 @@ services:
       minio:
         condition: service_healthy
     entrypoint: ["/bin/sh", "-c"]
-    command: >
-      "until (/usr/bin/mc alias set local http://minio:9000 minioadmin minioadmin) do sleep 1; done &&
-       /usr/bin/mc mb -p local/datalake || true &&
-       [ -d /seed ] && /usr/bin/mc cp -r /seed/ local/datalake/raw/recife/ || true"
+    command: |
+      "
+      echo '🔧 Configurando MinIO...'
+      until (/usr/bin/mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin}) do
+        echo 'Aguardando MinIO...'
+        sleep 2
+      done
+      
+      echo '📦 Criando estrutura de buckets...'
+      /usr/bin/mc mb -p local/datalake || true
+      /usr/bin/mc mb -p local/datalake/raw/recife || true
+      /usr/bin/mc mb -p local/datalake/curated/recife || true
+      
+      if [ -d /seed ]; then
+        echo '📤 Carregando dados de exemplo...'
+        /usr/bin/mc cp -r /seed/ local/datalake/raw/recife/ || true
+      fi
+      
+      echo '✅ MinIO configurado com sucesso!'
+      "
     volumes:
       - ./data/raw:/seed:ro
 
@@ -50,11 +77,18 @@ services:
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     environment:
       SPARK_NO_DAEMONIZE: "true"
-    ports: ["7077:7077", "8080:8080"]
+    ports:
+      - "7077:7077"
+      - "8080:8080"
     volumes:
-      - ./app:/opt/app
-      - ./spark/conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
-      - ./spark/conf/core-site.xml:/opt/spark/conf/core-site.xml
+      - ./include:/opt/app
+      - ./config/spark/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+      - ./config/spark/core-site.xml:/opt/spark/conf/core-site.xml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   spark-worker:
     image: apache/spark:3.4.0
@@ -63,39 +97,55 @@ services:
       SPARK_NO_DAEMONIZE: "true"
       SPARK_WORKER_MEMORY: 2G
       SPARK_WORKER_CORES: 2
-    depends_on: [spark-master]
+    depends_on:
+      spark-master:
+        condition: service_healthy
     volumes:
-      - ./app:/opt/app
-      - ./spark/conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
-      - ./spark/conf/core-site.xml:/opt/spark/conf/core-site.xml
+      - ./include:/opt/app
+      - ./config/spark/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+      - ./config/spark/core-site.xml:/opt/spark/conf/core-site.xml
 
   airflow-init:
-    build: ./airflow
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
     image: airflow-with-spark:2.10.2-3.4.0
     entrypoint: ["/bin/bash", "-c"]
     environment:
       <<: *airflow_env
-    command: >
-      "airflow db upgrade &&
-       airflow users create --role Admin --username admin --password admin --firstname A --lastname F --email admin@example.com || true"
+    command: |
+      "
+      airflow db upgrade
+      airflow users create \
+        --role Admin \
+        --username ${AIRFLOW_ADMIN_USERNAME:-admin} \
+        --password ${AIRFLOW_ADMIN_PASSWORD:-admin} \
+        --firstname Admin \
+        --lastname User \
+        --email ${AIRFLOW_ADMIN_EMAIL:-admin@example.com} || true
+      "
     depends_on:
       postgres:
         condition: service_healthy
 
   airflow-webserver:
-    build: ./airflow
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
     image: airflow-with-spark:2.10.2-3.4.0
     environment:
       <<: *airflow_env
     command: webserver
-    ports: ["8088:8080"]
+    ports:
+      - "8088:8080"
     depends_on:
       - airflow-init
       - postgres
     volumes:
       - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
       - ./airflow/logs:/opt/airflow/logs
-      - ./app:/opt/app
+      - ./include:/opt/app
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
       interval: 10s
@@ -103,7 +153,9 @@ services:
       retries: 5
 
   airflow-scheduler:
-    build: ./airflow
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
     image: airflow-with-spark:2.10.2-3.4.0
     environment:
       <<: *airflow_env
@@ -113,9 +165,15 @@ services:
         condition: service_healthy
     volumes:
       - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
       - ./airflow/logs:/opt/airflow/logs
-      - ./app:/opt/app
+      - ./include:/opt/app
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "airflow scheduler"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
+  postgres-data:
   minio-data:
-

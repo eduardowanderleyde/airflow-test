@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+  <property>
+    <name>fs.s3a.endpoint</name>
+    <value>http://minio:9000</value>
+    <description>MinIO endpoint for S3A filesystem</description>
+  </property>
+  
+  <property>
+    <name>fs.s3a.path.style.access</name>
+    <value>true</value>
+    <description>Enable path-style access for MinIO</description>
+  </property>
+  
+  <property>
+    <name>fs.s3a.connection.ssl.enabled</name>
+    <value>false</value>
+    <description>Disable SSL for local development</description>
+  </property>
+  
+  <property>
+    <name>fs.s3a.impl</name>
+    <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+    <description>S3A filesystem implementation</description>
+  </property>
+</configuration>

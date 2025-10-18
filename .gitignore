@@ -1,21 +1,43 @@
-# Airflow
-airflow/logs/
-*.log
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
 venv/
-env/
 ENV/
+env/
+.venv
+
+# Airflow
+airflow/logs/
+airflow/airflow.db
+airflow/airflow-webserver.pid
+airflow/unittests.cfg
+airflow/*.log
 
 # Docker
 .env
 
-# IDE
+# IDEs
 .vscode/
 .idea/
 *.swp
@@ -26,7 +48,12 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Dados locais (opcional - remover se quiser versionar)
-# data/raw/
-# data/curated/
+# Temporary files
+*.tmp
+*.bak
+*.log
+.cache/
 
+# Data (se for grande)
+# data/raw/*.csv
+# data/curated/

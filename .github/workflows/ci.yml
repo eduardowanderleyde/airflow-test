@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint Python Code
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install linting tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+      
+      - name: Run ruff linter
+        run: |
+          ruff check include/ airflow/dags/ --output-format=github
+      
+      - name: Run ruff formatter check
+        run: |
+          ruff format --check include/ airflow/dags/
+
+  docker-build:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build Airflow image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./airflow
+          file: ./airflow/Dockerfile
+          push: false
+          tags: airflow-with-spark:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Validate docker-compose
+        run: |
+          docker compose config > /dev/null
+          echo "✅ docker-compose.yml is valid"
+
+  yaml-lint:
+    name: YAML Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install yamllint
+        run: |
+          python -m pip install --upgrade pip
+          pip install yamllint
+      
+      - name: Run yamllint
+        run: |
+          yamllint -d "{extends: default, rules: {line-length: {max: 120}}}" docker-compose.yml .github/workflows/
+
